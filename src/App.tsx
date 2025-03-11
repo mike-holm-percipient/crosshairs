@@ -1,18 +1,14 @@
 import * as React from 'react';
-import {useState} from 'react';
+import {useRef, useState} from 'react';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import {Stack} from "@mui/material";
 import {JSX} from 'react/jsx-runtime';
 
 
-function getNativeEvent(e: React.MouseEvent): MouseEvent {
-  return e.nativeEvent;
-}
-
 export default function App() {
   const [svgOffset, captureSvgOffsetPair] = useOffsetPair([0, 0]);
-  const [square, capturePoint1, capturePoint2] = useSquare();
+  const [square, capturePoint1, capturePoint2, imgRef, svgRef] = useSquare();
 
   const [x, y] = svgOffset
   return (
@@ -32,19 +28,23 @@ export default function App() {
         alignItems="center"
         p={8}>
         <img
+          style={{ userSelect: 'none' }}
           width="100%"
           src='/hats-lo.jpg'
           alt='two men in blue hard hats'
+          ref={imgRef}
         />
         <svg
+          ref={svgRef}
           style={{
             position: 'absolute',
             height: '100%',
             width: '100%'
           }}
+          onResize={e => {debugger;}}
           onMouseMove={e => {
             captureSvgOffsetPair(e)
-            if(e.buttons === 1) capturePoint2(e)
+            if(isDragging(e)) capturePoint2(e)
           }}
           onMouseLeave={captureSvgOffsetPair}
           onMouseDown={capturePoint1}
@@ -101,26 +101,49 @@ function usePair(init: [number, number] = [0, 0]): [Pair, React.Dispatch<React.S
   return [pair, setPair, () => setPair(init)]
 }
 
-function useSquare(init1?: Pair, init2?: Pair): [[Pair, Pair], MouseEventHandler, MouseEventHandler] {
+function getOffsetPair(e: React.MouseEvent): Pair {
+  const target = getNativeEvent(e);
+  const x: number = target[`${offsetPairPrefix}X`];
+  const y: number = target[`${offsetPairPrefix}Y`];
+  return [x, y];
+}
+
+function useSquare(init1?: Pair, init2?: Pair): [[Pair, Pair], MouseEventHandler, MouseEventHandler, React.Ref<any>, React.Ref<any>] {
   const [pair1, setPair1] = usePair(init1)
-  const [pair2, setPair2, reset2] = usePair(init2)
+  const [pair2, setPair2] = usePair(init2)
+  const imgRef = useRef<HTMLImageElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  function clampToImgBounds([x1, y1]: Pair): Pair {
+    const imgRect = imgRef.current?.getBoundingClientRect();
+    const svgRect = svgRef.current?.getBoundingClientRect();
+    const imgLeft = imgRect?.left ?? 0;
+    const imgTop = imgRect?.top ?? 0;
+    const imgRight = imgRect?.right ?? 0;
+    const svgLeft = svgRect?.left ?? 0;
+    const svgTop = svgRect?.top ?? 0;
+    const imgBottom = imgRect?.bottom ?? 0;
+    const minX = imgLeft - svgLeft
+    const minY = imgTop - svgTop
+    const maxX = imgRight - svgLeft
+    const maxY = imgBottom - svgTop
+    const clampedX = Math.min(Math.max(x1, minX), maxX);
+    const clampedY = Math.min(Math.max(y1, minY), maxY);
+    return [clampedX, clampedY];
+  }
 
   function capturePair1(e: React.MouseEvent) {
-    const target = getNativeEvent(e);
-    const x: number = target[`${offsetPairPrefix}X`];
-    const y: number = target[`${offsetPairPrefix}Y`];
+    const [x,y] = clampToImgBounds(getOffsetPair(e));
     setPair1([x, y]);
     setPair2([x, y]);
   }
 
   function capturePair2(e: React.MouseEvent) {
-    const target = getNativeEvent(e);
-    const x: number = target[`${offsetPairPrefix}X`];
-    const y: number = target[`${offsetPairPrefix}Y`];
+    const [x,y] = clampToImgBounds(getOffsetPair(e));
     setPair2([x, y]);
   }
 
-  return [[pair1, pair2], capturePair1, capturePair2]
+  return [[pair1, pair2], capturePair1, capturePair2, imgRef, svgRef]
 }
 
 const offsetPairPrefix = 'offset';
@@ -137,5 +160,13 @@ function useOffsetPair(init: [number, number] | undefined): [Pair, MouseEventHan
   }
 
   return [pair, captureSvgOffsetPair];
+}
+
+function getNativeEvent(e: React.MouseEvent): MouseEvent {
+  return e.nativeEvent;
+}
+
+function isDragging(e: React.MouseEvent<SVGSVGElement>) {
+  return e.buttons === 1;
 }
 
